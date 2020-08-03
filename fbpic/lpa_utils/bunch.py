@@ -794,6 +794,152 @@ def add_elec_bunch_from_arrays( sim, x, y, z, ux, uy, uz, w,
     return elec_bunch
 
 
+def add_particle_bunch_gaussian_chirp(sim, q, m, sig_r, sig_z, n_emit,
+                                gamma0, sig_gamma,
+                                n_physical_particles, n_macroparticles,
+                                tf=0., zf=0., chirp=0., boost=None,
+                                save_beam=None, z_injection_plane=None,
+                                initialize_self_field=True):
+    """
+    Introduce a relativistic Gaussian particle bunch in the simulation,
+    along with its space charge field.
+
+    The bunch is initialized with a normalized emittance `n_emit`,
+    in such a way that it will be focused at time `tf`, at the position `zf`.
+    Thus if `tf` is not 0, the bunch will be initially out of focus.
+    (This does not take space charge effects into account.)
+
+    Parameters
+    ----------
+    sim : a Simulation object
+        The structure that contains the simulation.
+
+    q : float (in Coulomb)
+        Charge of the particle species
+
+    m : float (in kg)
+        Mass of the particle species
+
+    sig_r : float (in meters)
+        The transverse RMS bunch size.
+
+    sig_z : float (in meters)
+        The longitudinal RMS bunch size.
+
+    n_emit : float (in meters)
+        The normalized emittance of the bunch.
+
+    gamma0 : float
+        The Lorentz factor of the electrons.
+
+    sig_gamma : float
+        The absolute energy spread of the bunch.
+
+    n_physical_particles : float
+        The number of physical particles (e.g. electrons) the bunch should
+        consist of.
+
+    n_macroparticles : int
+        The number of macroparticles the bunch should consist of.
+
+    zf: float (in meters), optional
+        Position of the focus.
+
+    tf : float (in seconds), optional
+        Time at which the bunch reaches focus.
+
+    boost : a BoostConverter object, optional
+        A BoostConverter object defining the Lorentz boost of
+        the simulation.
+
+    save_beam : string, optional
+        Saves the generated beam distribution as an .npz file "string".npz
+
+    z_injection_plane: float (in meters) or None
+        When `z_injection_plane` is not None, then particles have a ballistic
+        motion for z<z_injection_plane. This is sometimes useful in
+        boosted-frame simulations.
+        `z_injection_plane` is always given in the lab frame.
+
+    initialize_self_field: bool, optional
+       Whether to calculate the initial space charge fields of the bunch
+       and add these fields to the fields on the grid (Default: True)
+    """
+    # Get Gaussian particle distribution in x,y,z
+    x = sig_r * np.random.normal(0., 1., n_macroparticles)
+    y = sig_r * np.random.normal(0., 1., n_macroparticles)
+    z = zf + sig_z * np.random.normal(0., 1., n_macroparticles)
+
+    # Define sigma of ux and uy based on normalized emittance
+    sig_ur = (n_emit / sig_r)
+    # Get Gaussian distribution of transverse normalized momenta ux, uy
+    ux = sig_ur * np.random.normal(0., 1., n_macroparticles)
+    uy = sig_ur * np.random.normal(0., 1., n_macroparticles)
+
+    # Generate Gaussian gamma distribution of the beam
+    if sig_gamma > 0.:
+        gamma = np.random.normal(gamma0, sig_gamma, n_macroparticles)
+    else:
+        # Zero energy spread beam
+        gamma = np.full(n_macroparticles, gamma0)
+        if sig_gamma < 0.:
+            warnings.warn(
+                "Negative energy spread sig_gamma detected."
+                " sig_gamma will be set to zero. \n")
+
+    # add chirp
+    gamma = gamma0 * (1. + chirp * (z - zf))
+    
+    # Get inverse gamma
+    inv_gamma = 1. / gamma
+
+    # Finally we calculate the uz of each particle
+    # from the gamma and the transverse momenta ux, uy
+    uz_sqr = (gamma ** 2 - 1) - ux ** 2 - uy ** 2
+
+    # Check for unphysical particles with uz**2 < 0
+    mask = uz_sqr >= 0
+    N_new = np.count_nonzero(mask)
+    if N_new < n_macroparticles:
+        warnings.warn(
+              "Particles with uz**2<0 detected."
+              " %d Particles will be removed from the beam. \n"
+              "This will truncate the distribution of the beam"
+              " at gamma ~= 1. \n"
+              "However, the charge will be kept constant. \n"%(n_macroparticles
+                                                               - N_new))
+        # Remove unphysical particles with uz**2 < 0
+        x = x[mask]
+        y = y[mask]
+        z = z[mask]
+        ux = ux[mask]
+        uy = uy[mask]
+        inv_gamma = inv_gamma[mask]
+        uz_sqr = uz_sqr[mask]
+    # Calculate longitudinal momentum of the bunch
+    uz = np.sqrt(uz_sqr)
+    # Get weight of each particle
+
+    w = n_physical_particles / N_new * np.ones_like(x)
+    # Propagate distribution to an out-of-focus position tf.
+    # (without taking space charge effects into account)
+    if tf != 0.:
+        x = x - ux * inv_gamma * c * tf
+        y = y - uy * inv_gamma * c * tf
+        z = z - uz * inv_gamma * c * tf
+
+    # Save beam distribution to an .npz file
+    if save_beam is not None:
+        np.savez(save_beam, x=x, y=y, z=z, ux=ux, uy=uy, uz=uz,
+            inv_gamma=inv_gamma, w=w)
+
+    # Add the electrons to the simulation
+    ptcl_bunch = add_particle_bunch_from_arrays(sim, q, m, x, y, z, ux, uy, uz,
+                    w, boost=boost, z_injection_plane=z_injection_plane,
+                    initialize_self_field=initialize_self_field)
+    return ptcl_bunch
+
+
 def get_space_charge_fields( sim, ptcl, direction='forward' ):
     """
     Add the space charge field from `ptcl` the interpolation grid
