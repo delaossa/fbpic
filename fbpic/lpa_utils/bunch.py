@@ -865,17 +865,6 @@ def add_particle_bunch_gaussian_chirp(sim, q, m, sig_r, sig_z, n_emit,
        Whether to calculate the initial space charge fields of the bunch
        and add these fields to the fields on the grid (Default: True)
     """
-    # Get Gaussian particle distribution in x,y,z
-    x = sig_r * np.random.normal(0., 1., n_macroparticles)
-    y = sig_r * np.random.normal(0., 1., n_macroparticles)
-    z = zf + sig_z * np.random.normal(0., 1., n_macroparticles)
-
-    # Define sigma of ux and uy based on normalized emittance
-    sig_ur = (n_emit / sig_r)
-    # Get Gaussian distribution of transverse normalized momenta ux, uy
-    ux = sig_ur * np.random.normal(0., 1., n_macroparticles)
-    uy = sig_ur * np.random.normal(0., 1., n_macroparticles)
-
     # Generate Gaussian gamma distribution of the beam
     if sig_gamma > 0.:
         gamma = np.random.normal(gamma0, sig_gamma, n_macroparticles)
@@ -887,8 +876,19 @@ def add_particle_bunch_gaussian_chirp(sim, q, m, sig_r, sig_z, n_emit,
                 "Negative energy spread sig_gamma detected."
                 " sig_gamma will be set to zero. \n")
 
+    # Get Gaussian particle distribution in x,y,z
+    x = sig_r * np.random.normal(0., 1., n_macroparticles)
+    y = sig_r * np.random.normal(0., 1., n_macroparticles)
+    z = zf + sig_z * np.random.normal(0., 1., n_macroparticles)
+
+    # Define sigma of ux and uy based on normalized emittance
+    sig_ur = (n_emit / sig_r)
+    # Get Gaussian distribution of transverse normalized momenta ux, uy
+    ux = sig_ur * np.random.normal(0., 1., n_macroparticles)
+    uy = sig_ur * np.random.normal(0., 1., n_macroparticles)
+
     # add chirp
-    gamma = gamma0 * (1. + chirp * (z - zf))
+    gamma = gamma + gamma0 * chirp * (z - zf)
     
     # Get inverse gamma
     inv_gamma = 1. / gamma
