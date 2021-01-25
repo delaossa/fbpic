@@ -10,7 +10,7 @@ from scipy.constants import c
 
 class Mirror(object):
 
-    def __init__( self, z_lab, n_cells=2, gamma_boost=None ):
+    def __init__( self, z_lab, n_cells=2, gamma_boost=None, skip_mode0=False):
         """
         Initialize a mirror.
 
@@ -32,6 +32,7 @@ class Mirror(object):
         self.z_lab = z_lab
         self.gamma_boost = gamma_boost
         self.n_cells = n_cells
+        self.skip_mode0 = skip_mode0
 
         pass
 
@@ -64,7 +65,12 @@ class Mirror(object):
         imin = max( imax-self.n_cells, 0 )
 
         # Set fields (E, B) to 0 on CPU or GPU
-        for grid in interp:
-            for field in ['Er', 'Et', 'Ez', 'Br', 'Bt', 'Bz']:
-                arr = getattr( grid, field )
-                arr[ imin:imax, : ] = 0.  # Uses numpy/cupy syntax
+        for i, grid in enumerate(interp):
+            if self.skip_mode0 and (i == 0):
+                continue
+            fieldlist = ['Er', 'Et', 'Ez', 'Br', 'Bt', 'Bz']
+            if grid.use_pml:
+                fieldlist = fieldlist + ['Er_pml', 'Et_pml', 'Br_pml', 'Bt_pml']
+            for field in fieldlist:
+                arr = getattr(grid, field)
+                arr[imin:imax, :] = 0.  # Uses numpy/cupy syntax
